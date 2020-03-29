@@ -2,75 +2,75 @@ package main
 
 import (
     "fmt"
-    "database/sql"
     "regexp"
+    "database/sql"
     "bufio"
     "os"
     "log"
+    "strings"
+    _ "github.com/lib/pq"
 )
 
 const (
   host = "localhost"
   port = 5432
-  user = "nw_patrick"
-  password = "123456"
+  user = "postgres"
+  password = "Cancer21"
   dbname = "nw_db"
-  localFilePath = "C:\\users\\Gizeli.zancanaro\\go\\src\\github.com\\pgrpatrick\\NWtest\\base_testepatrick.txt"
-  localFile = "base_testepatrick.txt"
+  localFile = "base_teste.txt"
 )   
 
+type ticket struct {
+    nuCpfCnpj           string 
+    stPrivate           string
+    stIncompleto        string
+    dtUltimaCompra      string
+    vlTicketMedio       string
+    vlTicketUltimaCompra string
+    nuCnpjLojaFrequente    string
+    nuCnpjLojaUltimaCompra string
+}
+
+func (t *ticket) setValues(values []string) {
+    t.nuCpfCnpj = values[0]
+    t.stPrivate = values[1]
+    t.stIncompleto = values[2]
+    t.dtUltimaCompra = values[3]
+    t.vlTicketMedio = values[4]
+    t.vlTicketUltimaCompra = values[5]
+    t.nuCnpjLojaFrequente = values[6]
+    t.nuCnpjLojaUltimaCompra = values[7]
+}
+
 func main() {
-    var dadosGravacao []string
-    dadosGravacao, err := lerArquivo(localFilePath)
-    if err != nil {
-        log.Fatalf("Erro de leitura:", err)
-    }
-    inseriBancoDados(dadosGravacao)
-    if err != nil {
-        log.Fatalf("Erro de gravacao:", err)
-    }
-}
-
-// Funcao leitura do arquivo, retorna a string apenas com dados necessarios
-func lerArquivo(localFilePath string) ([]string, error) {
-
+    fmt.Println("Iniciando importação do arquivo: ",localFile )
     // abrir o arquivo
-    dadosArquivoTexto, err := os.Open(localFilePath)
+    contentFile, err := os.Open(localFile)
+    
+    //contentFile, err := ioutil.ReadFile(localFile)
     if err != nil {
-        return nil, err
+        log.Panicf("Falha ao ler o arquivo: %s", err)
     }
-   
-    // fecha o arquivo
-    defer dadosArquivoTexto.Close()
-   
-    //faz a leitura das linhas
-    scanLinhas := bufio.NewScanner(dadosArquivoTexto)
-    
-    var linhaArray []string
-    //scanear linha a linha
-    for scanLinhas.Scan(){
-        
-        linhaScanner := scanLinhas.Text()
-        //compila com expressao regular o delimitador dos espacos em branco
-        re := regexp.MustCompile(`\s+.*?`)
-        
 
-        //separacao das colunas conforme formula re
-        coluna := re.Split(linhaScanner, -1)
-
-        //teste para saber se está tudo ok
-        for i := range(coluna) {
-
-            fmt.Println(coluna[i])
-        }
-    }
     // Retorna as linhas lidas e um erro se ocorrer algum erro no scanner
-    return linhaArray, scanLinhas.Err()
-}
+    //fmt.Println(contentFile)
+    defer contentFile.Close()
 
-// Funcao que escreve um texto no arquivo e retorna um erro caso tenha algum problema
-func inseriBancoDados(linhas []string) error {
-    
+    scanner := bufio.NewScanner(contentFile)
+    scanner.Split(bufio.ScanLines)
+
+    var lines []string
+  
+    for scanner.Scan() {
+      lines = append(lines, scanner.Text())
+    }
+    //INICIALIZANDO A STRUCT
+
+    structTicket := ticket{}
+    //COMPILANDO A REGEX PARA TIRAR OS ESPAÇOS NO TXT
+   // regexCompiled, _ := regexp.Compile("\\s+")
+    regexCompiled := regexp.MustCompile(`\s+.*?`)
+
     psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
     host, port, user, password, dbname)
     db, err := sql.Open("postgres", psqlInfo)
@@ -78,17 +78,74 @@ func inseriBancoDados(linhas []string) error {
     panic(err)
     }
     defer db.Close()
- 
-    sqlquerie := `
-    INSERT INTO tb_ticket(nu_cpf_cnpj,st_private,st_incompleto,dt_ultima_compra,vl_ticket_medio,vl_ticket_ultima_compra,nu_cnpj_loja_frequente character,nu_cnpj_loja_ultima_compra) 
-    VALUES($1, $2, $3, $4, $5, $6, 7$, 8$) 
-    returning id_ticket.Scan(&lastInsertId)`
 
-    var lastInsertId int
-    id_ticket := 0
-    err = db.QueryRow(sqlquerie).Scan(&id_ticket)
-    //checkErr(err) -- undefined checkErr
-    
-    fmt.Println("Ultimo id_ticket inserido=", lastInsertId)
-    return err
+    //tudo esta dentro de lines, lendo linha a linha
+    fmt.Println("Iniciando gravação dos registros...")
+    for i, line := range lines {
+        if i == 0 {
+            fmt.Println("Cabeçalho do arquivo texto descartado...")
+            //fmt.Println(line)
+        } else {
+            //fmt.Println("Linha inteira:")
+            //fmt.Println(line)
+            //regex compilada, substitui a regex que encontrar c uma string c apenas um espaço
+            replaced := regexCompiled.ReplaceAllString(line, " ")
+            //separando as strings em um slice p extrair o valor
+            splited := strings.Split(replaced, " ")
+            //fmt.Println("Linha formatada (splited):")
+            //fmt.Println(splited)
+
+            //metodo criado para setar os valores da struct
+            structTicket.setValues(splited)
+
+            //linha a ser inserida
+            //fmt.Println("Inserindo linha (structTicket): ",structTicket.nucpfcnpj)
+            sqlStatement := `
+            INSERT INTO tb_ticket (nu_cpf_cnpj,st_private,st_incompleto,dt_ultima_compra,vl_ticket_medio,vl_ticket_ultima_compra,nu_cnpj_loja_frequente,nu_cnpj_loja_ultima_compra)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+             _, err = db.Exec(sqlStatement,
+                     structTicket.nuCpfCnpj,
+                     structTicket.stPrivate,
+                     structTicket.stIncompleto,
+                     structTicket.dtUltimaCompra,
+                     structTicket.vlTicketMedio,
+                     structTicket.vlTicketUltimaCompra,
+                     structTicket.nuCnpjLojaFrequente,
+                     structTicket.nuCnpjLojaUltimaCompra) 
+            //fmt.Println(sqlStatement)
+            if err != nil {
+            panic(err)
+            }
+
+            //fmt.Println(sqlStatement)
+            //fmt.Println("Inserido linha:")
+            //fmt.Println(structTicket)
+            }
+        }
+        fmt.Println("Finalizado o INSERT no banco de dados.")
+         
+
+    // Update tabela tb_ticket com a validacao do CPF e CNPF, com funcoes no banco postgresql
+    sqlUpdate := `
+    Update tb_ticket set 
+    st_valido_cpf_cnpj = 
+        case when char_length(nu_cpf_cnpj)=(14) 
+        then fc_valida_cpf(replace(replace(replace( nu_cpf_cnpj, '.', '' ),'/',''),'-',''), false)  
+        when char_length(nu_cpf_cnpj)=(18) 
+        then fc_valida_cnpj(replace(replace(replace( nu_cpf_cnpj, '.', '' ),'/',''),'-',''), false) else null end,
+    nu_cnpj_loja_frequente = 
+        case when char_length(nu_cnpj_loja_frequente)=(18) 
+        then fc_valida_cnpj(replace(replace(replace(nu_cnpj_loja_frequente, '.', '' ),'/',''),'-',''), false) else null end,
+    st_valido_cnpj_ultima_compra = 
+        case when char_length(nu_cnpj_loja_ultima_compra)=(18) 
+        then fc_valida_cnpj(replace(replace(replace( nu_cnpj_loja_ultima_compra, '.', '' ),'/',''),'-',''), false) else null end
+    `
+    fmt.Println("Validando CPF e CNPJ...")
+    _, err = db.Exec(sqlUpdate)
+    if err != nil {
+      panic(err)
+    }
+    fmt.Println("Registros CPF e CNPJ verificados.")
+    fmt.Println("Fim.")
+return
 }
