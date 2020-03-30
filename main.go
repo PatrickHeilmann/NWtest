@@ -15,7 +15,7 @@ const (
   host = "localhost"
   port = 5432
   user = "postgres"
-  password = "Cancer21"
+  password = "123456"
   dbname = "nw_db"
   localFile = "base_teste.txt"
 )   
@@ -64,11 +64,11 @@ func main() {
     for scanner.Scan() {
       lines = append(lines, scanner.Text())
     }
-    //INICIALIZANDO A STRUCT
-
+    
+    //inicializando a struct
     structTicket := ticket{}
-    //COMPILANDO A REGEX PARA TIRAR OS ESPAÇOS NO TXT
-   // regexCompiled, _ := regexp.Compile("\\s+")
+    
+    //compilando a regex para retirar os espaços entre os campos.
     regexCompiled := regexp.MustCompile(`\s+.*?`)
 
     psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
@@ -88,9 +88,9 @@ func main() {
         } else {
             //fmt.Println("Linha inteira:")
             //fmt.Println(line)
-            //regex compilada, substitui a regex que encontrar c uma string c apenas um espaço
+            //regex compilada, substitui a regex que encontrar com uma string com apenas um espaço
             replaced := regexCompiled.ReplaceAllString(line, " ")
-            //separando as strings em um slice p extrair o valor
+            //separando as strings em um slice para extrair o valor
             splited := strings.Split(replaced, " ")
             //fmt.Println("Linha formatada (splited):")
             //fmt.Println(splited)
