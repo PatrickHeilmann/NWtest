@@ -1,0 +1,81 @@
+Solução Técnica do Projeto "NWtest"
+
+Para a realizar da importação do arquivo, foi analizado primeiramente o formato do arquivo e suas características.
+Notou-se que todas as linhas/colunas possuiam tamanhos fixos, e apensar dos dados contidos não utilizarem todo o range disponível, foi estabelecido este limite aos campos, assim a definição da tabela no banco de dados.
+    
+	nu_cpf_cnpj 				character varying(19)
+    st_private 					character varying(12)
+    st_incompleto 				character varying(12)
+    dt_ultima_compra 			character varying(22)
+    vl_ticket_medio 			character varying(22)
+    vl_ticket_ultima_compra 	character varying(24)
+    nu_cnpj_loja_frequente 		character varying(20)
+    nu_cnpj_loja_ultima_compra 	character varying(21)
+
+Normalmente utilizamos para cpf/cnpj apenas campos string definidos com tamanhos específico (string 11 ou 14), mas nesta situação optou-se por guardar com todo o conteudo do campo, incluindo pontos ".", virgulas "," e outros, realizando apenas o replace dos campos na fase de validação.	
+ 
+A defininção da chave na tabela não foi possível de ser definida, tendo em vista que poderiam existir "nu_cpf_cnpj" replicados.
+Para isso foi criado um ID para chave primária da tabela, auto incrementável (bigserial/int8).
+	id_ticket bigserial NOT NULL
+
+Outro ponto a ser analizado seria qual a forma de validação que os cpf ou cnpjs estariam sendo realizada. 
+Deletar o registro não era uma opção, pois os dados deveriam estar na integra! Foi então criados 3 campos booleanos para identificar as colunas com itens "válidos"/"não validos"/"nulos" (true/false/null).
+	st_valido_cpf_cnpj boolean,
+    st_valido_cnpj_loja_frequente boolean,
+    st_valido_cnpj_ultima_compra boolean
+
+
+Para programação em Golang, no arquivo "main.go", utilizamos a estrutura de array combinada com struct.
+Abaixo o tipo de dado desenhado.
+	type ticket struct 
+    nuCpfCnpj           string 
+    stPrivate           string
+    stIncompleto        string
+    dtUltimaCompra      string
+    vlTicketMedio       string
+    vlTicketUltimaCompra string
+    nuCnpjLojaFrequente    string
+    nuCnpjLojaUltimaCompra string
+
+Após realizar a abertura do aquivo " contentFile, err := os.Open(localFile)" realizamos a leitura do arquivo utilizando o scanner, "scanner := bufio.NewScanner(contentFile)". Desta forma todos os datos estão armazenados.
+
+A proxima etapa foi realizar a separação em linhas "scanner.Split(bufio.ScanLines)".
+Esta separação da leitura de linhas será já utilizada para realizar o looping de insert dos dados.
+
+Neste momento os dados estão ainda com os espaços entre os campos, para isso compilamos uma função  de expressão regular "regexp", "regexCompiled := regexp.MustCompile(`\s+.*?`)", que será utilizada dentro do looping do insert.
+
+No laço utilizado foi incluído uma excessão para retirar a primera linha do arquivo que não era esperada.
+	for i, line := range lines {
+        if i == 0 {
+            fmt.Println("Cabeçalho do arquivo texto descartado...")
+        } else {...
+
+Dentro do looping foi seguido pela aplicação da expressão regular "regexCompiled" e a separação dos campos "strings.Split" para posteriormente incluir na struct.
+	replaced := regexCompiled.ReplaceAllString(line, " ")
+    splited := strings.Split(replaced, " ")
+	
+Na sequencia foi criado um metodo para incluir os valores da struct
+	structTicket.setValues(splited)	
+
+			
+Com os valores da linha populada na struct, foi então que os valores foram mapeados para a query do banco de dados e executado.
+	sqlStatement := `
+	INSERT INTO tb_ticket (nu_cpf_cnpj,st_private,st_incompleto,dt_ultima_compra,vl_ticket_medio,vl_ticket_ultima_compra,nu_cnpj_loja_frequente,nu_cnpj_loja_ultima_compra)
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+	 _, err = db.Exec(sqlStatement,
+			 structTicket.nuCpfCnpj,
+			 structTicket.stPrivate,
+			 structTicket.stIncompleto,
+			 structTicket.dtUltimaCompra,
+			 structTicket.vlTicketMedio,
+			 structTicket.vlTicketUltimaCompra,
+			 structTicket.nuCnpjLojaFrequente,
+			 structTicket.nuCnpjLojaUltimaCompra) 
+			 
+Ao termino do insert no banco de dados, foi realizada um update no banco de dados para popular os campos de validação dos CPFs e CNPJs, finalizando o processamento. Este update utilizamos algumas funções extras do banco de dados, como o "char_length" para decidir se o campor possui mesmo o numero correto de digitos para o CPF/CNPJ e o "replace" para retirar os caracteres extras (decidido desta forma) para em seguida realizara a verificação da validade numérica utilizando duas funções específicas para CPF e CNPJ.
+st_valido_cpf_cnpj = 
+	case when char_length(nu_cpf_cnpj)=(14) 
+	then fc_valida_cpf(replace(replace(replace( nu_cpf_cnpj, '.', '' ),'/',''),'-',''), false)  
+	when char_length(nu_cpf_cnpj)=(18) 
+	then fc_valida_cnpj(replace(replace(replace( nu_cpf_cnpj, '.', '' ),'/',''),'-',''), false) else null end,
+ 
